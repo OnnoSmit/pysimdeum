@@ -24,3 +24,5 @@ print(tot_cons)
 tot_cons.plot()
 tot_cons.rolling(time=3600, center=True).mean().plot()
 plt.show()
+
+
