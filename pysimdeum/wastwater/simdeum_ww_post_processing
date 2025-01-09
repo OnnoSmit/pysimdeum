@@ -1,0 +1,103 @@
+import os
+import shutil
+import pandas as pd
+import numpy as np
+import random
+
+COLD_WATER_TEMP = 20  # room temperature
+HOT_WATER_TEMP = 45
+
+def find_start_washcycle(fp):
+    # Placeholder function - moet aangepast worden naar de daadwerkelijke logica
+    return [], []
+
+def get_discharge_temp(discharge_temp):
+    if len(discharge_temp) == 1:
+        return discharge_temp[0]
+    else:
+        return random.choice(discharge_temp)
+
+def simdeum_ww_post_processing(input_dir, output_dir, simdeum_ww):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    for file in os.listdir(input_dir):
+        if file.endswith('.house'):
+            house_file = os.path.join(input_dir, file)
+            shutil.copy(house_file, os.path.join(output_dir, file))
+            
+            data = pd.read_pickle(house_file)
+            
+            for key, dp in data.items():
+                if key.startswith('demand_pattern'):
+                    for tap, fp in dp.items():
+                        if tap == 'total':
+                            continue
+                        
+                        discharge_temp = get_discharge_temp(simdeum_ww[tap]['discharge_temp'])
+                        
+                        if tap in ['Shower', 'Bath', 'Wc']:
+                            fp['hotFlowArray'] = fp['flowArray'] * (discharge_temp - COLD_WATER_TEMP) / (HOT_WATER_TEMP - COLD_WATER_TEMP)
+                        elif tap in ['Ktap', 'Brtap']:
+                            temp_flow = np.array(fp['hotFlowArray'])
+                            ff = temp_flow > 0
+                            temp_flow[ff] = temp_flow[ff] * (discharge_temp - COLD_WATER_TEMP) / (HOT_WATER_TEMP - COLD_WATER_TEMP)
+                            fp['hotFlowArray'] = temp_flow
+                        elif tap == 'Ostap':
+                            fp['flowArray'] = np.zeros_like(fp['flowArray'])
+                            fp['hotFlowArray'] = fp['flowArray']
+                        elif tap in ['Wm', 'Dw']:
+                            WM_starts, WM_ends = find_start_washcycle(fp)
+                            if WM_starts:
+                                for start, end in zip(WM_starts, WM_ends):
+                                    discharge_temp = get_discharge_temp(simdeum_ww[tap]['discharge_temp'])
+                                    temp_total_flow = np.array(fp['flowArray'])
+                                    temp_hot_flow = np.array(fp['hotFlowArray'])
+                                    temp_hot_flow[start:end] = temp_total_flow[start:end] * (discharge_temp - COLD_WATER_TEMP) / (HOT_WATER_TEMP - COLD_WATER_TEMP)
+                                    if tap == 'Dw':
+                                        drying_discharge_temp = discharge_temp + 5
+                                        temp_hot_flow[start:end] = temp_total_flow[start:end] * (drying_discharge_temp - COLD_WATER_TEMP) / (HOT_WATER_TEMP - COLD_WATER_TEMP)
+                                    fp['hotFlowArray'] = temp_hot_flow
+
+                        nutrient_names = ['N', 'P', 'COD', 'BDO5']
+                        ff = np.array(fp['flowArray'])
+                        
+                        if tap in ['Dw', 'Wm']:
+                            ix_start_water_use, ix_end_water_use = find_start_washcycle(fp)
+                            if ix_start_water_use:
+                                water_use_dur = [len(ff[start:end][ff[start:end] > 0]) for start, end in zip(ix_start_water_use, ix_end_water_use)]
+                            else:
+                                water_use_dur = [1]
+                        else:
+                            ix_start_water_use = np.where(np.diff(ff) > 0)[0] + 1
+                            ix_end_water_use = np.where(np.diff(ff) < 0)[0]
+                            water_use_dur = ix_end_water_use - ix_start_water_use + 1
+
+                        temp_nutrient_loads = np.zeros((len(ff), len(nutrient_names)))
+                        for i, (start, end) in enumerate(zip(ix_start_water_use, ix_end_water_use)):
+                            for j, nutrient in enumerate(nutrient_names):
+                                nn = f"{nutrient}_discharge"
+                                temp_nutrient_loads[start:end, j] = simdeum_ww[tap].get(nn, 0) / water_use_dur[i]
+
+                        nutrient_load = {
+                            'N': {'name': 'Nitrogen', 'abbr': 'N', 'load': temp_nutrient_loads[:, 0]},
+                            'P': {'name': 'Phosphorus', 'abbr': 'P', 'load': temp_nutrient_loads[:, 1]},
+                            'COD': {'name': 'COD', 'abbr': 'COD', 'load': temp_nutrient_loads[:, 2]},
+                            'BDO5': {'name': 'BDO5', 'abbr': 'BDO5', 'load': temp_nutrient_loads[:, 3]},
+                        }
+
+                        for nutrient in nutrient_names:
+                            if nutrient not in fp:
+                                fp[nutrient] = np.zeros_like(ff)
+                            fp[nutrient] += nutrient_load[nutrient]['load']
+
+                    data[key] = dp
+            
+            with open(os.path.join(output_dir, file), 'wb') as f:
+                pd.to_pickle(data, f)
+
+# Voorbeeld aanroep
+simdeum_ww_post_processing('demo_house_dir', 'demo_discharge_dir', simdeum_ww)
+
+
+

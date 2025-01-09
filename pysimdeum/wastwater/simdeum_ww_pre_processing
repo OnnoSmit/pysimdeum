@@ -1,0 +1,58 @@
+import pandas as pd
+
+def simdeum_ww_pre_processing(input_stats, output_stats):
+    # Laad de .stats file
+    stats = pd.read_pickle(input_stats)
+    
+    for key in stats.keys():
+        if key == 'Shower':
+            # water discharge = water demand (duration and flow)
+            pass
+        elif key == 'Ktap':
+            # water discharge = water demand (duration and flow)
+            pass
+        elif key == 'Bath':
+            # total volume of demand is discharged but at a higher discharge rate
+            subtypes = stats[key]
+            for subtype in subtypes:
+                temp = subtype[5]
+                new_flow = 1  # L/s
+                new_time = round((temp['flow'] * temp['time'] * 60) / new_flow) / 60  # min
+                temp['flow'] = (temp['flow'] * temp['time']) / new_time  # L/s
+                temp['time'] = new_time  # min
+        elif key == 'Brtap':
+            # water discharge = water demand (duration and flow)
+            pass
+        elif key == 'Ostap':
+            # not discharged to sewer
+            del stats['Ostap']
+        elif key == 'Wm':
+            # discharge pattern differs from demand pattern
+            wm_pat_afvoer = pd.read_pickle('default_param_wm_pat_afvoer')
+            subtypes = stats[key]
+            for subtype in subtypes:
+                temp = subtype[5]
+                temp['pat'] = wm_pat_afvoer
+        elif key == 'Dw':
+            # discharge pattern differs from demand pattern
+            dw_pat_afvoer = pd.read_pickle('default_param_dw_pat_afvoer')
+            subtypes = stats[key]
+            for subtype in subtypes:
+                temp = subtype[5]
+                temp['pat'] = dw_pat_afvoer
+        elif key == 'Wc':
+            # total volume of demand is discharged but at a higher discharge rate
+            subtypes = stats[key]
+            for subtype in subtypes:
+                temp = subtype[5]
+                new_flow = 2  # L/s
+                new_time = round((temp['flow'] * temp['time'] * 60) / new_flow) / 60  # min
+                temp['flow'] = (temp['flow'] * temp['time']) / new_time  # L/s
+                temp['time'] = new_time  # min
+
+    # Opslaan van de gewijzigde .stats file
+    stats.to_pickle(output_stats)
+
+
+
+
