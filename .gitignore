@@ -113,3 +113,5 @@ unittest.house
 test.xlsx
 compare.xlsx
 testhot.xlsx
+consumptiontot_data_1simulatie.csv
+*.csv

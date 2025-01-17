@@ -1,0 +1,65 @@
+import pysimdeum
+import matplotlib.pyplot as plt
+import xarray as xr
+import pandas as pd
+import numpy as np
+
+# Built a house (family household)
+house = pysimdeum.built_house(house_type='family')
+print(house)
+
+# Show the inhabitants of a house
+print("List of Users:")
+print(house.users)
+
+# Show water end-use devices present in the house
+print("List of Devices:")
+print(house.appliances)
+
+# Simulate water consumption for house (xarray.DataArray)
+consumption = house.simulate(num_patterns=100)
+
+def adjust_flow_and_duration(data):
+    min_size = min(len(data.enduse.values), len(data.time.values))
+
+    for index in range(min_size):
+        enduse = data.enduse.values[index]
+
+        try:
+            flow = float(data.sel(flowtypes='totalflow').isel(time=index).values.item())
+            time = data.time.values[index] / np.timedelta64(1, 'm')
+        except (ValueError, TypeError):
+            continue
+
+        if enduse in ['Shower', 'Ktap', 'Brtap']:
+            continue 
+        elif enduse == 'Bath':
+            new_flow = 1
+            new_time = round((flow * time * 60) / new_flow) / 60
+            data.sel(flowtypes='totalflow').isel(time=index).data = flow * time / new_time
+            data.time.values[index] = new_time * np.timedelta64(1, 'm')
+        elif enduse == 'Wc':
+            new_flow = 2
+            new_time = round((flow * time * 60) / new_flow) / 60
+            data.sel(flowtypes='totalflow').isel(time=index).data = flow * time / new_time
+            data.time.values[index] = new_time * np.timedelta64(1, 'm')
+
+    return data
+
+# Apply the adjustment function
+consumption = adjust_flow_and_duration(consumption)
+
+# Filter out 'OutsideTap' and select only 'totalflow' flowtype for wastewater
+wastewater = consumption.where(consumption.enduse != 'OutsideTap', drop=True).sel(flowtypes='totalflow')
+
+# Summing over 'enduse' and 'user', and taking the mean over 'patterns'
+tot_ww = wastewater.sum(['enduse', 'user']).mean(['patterns'])
+
+# Plot only total wastewater flow
+plt.figure(figsize=(10, 6))
+tot_ww.plot(label='Total WasteWater Flow')
+plt.title("Total WasteWater Flow over Time")
+plt.xlabel("Time")
+plt.ylabel("Water Flow")
+plt.legend()
+plt.show()
