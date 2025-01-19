@@ -4,19 +4,19 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 
-# Built a house (family household)
+# Bouw een huis (gezinshuishouden)
 house = pysimdeum.built_house(house_type='family')
 print(house)
 
-# Show the inhabitants of a house
+# Toon de bewoners van een huis
 print("List of Users:")
 print(house.users)
 
-# Show water end-use devices present in the house
+# Toon water eindgebruik toestellen aanwezig in het huis
 print("List of Devices:")
 print(house.appliances)
 
-# Simulate water consumption for house (xarray.DataArray)
+# Simuleer waterverbruik voor het huishouden (xarray.DataArray)
 consumption = house.simulate(num_patterns=100)
 
 def adjust_flow_and_duration(data):
@@ -46,20 +46,26 @@ def adjust_flow_and_duration(data):
 
     return data
 
-# Apply the adjustment function
+# Pas de aanpassingsfunctie toe
 consumption = adjust_flow_and_duration(consumption)
 
-# Filter out 'OutsideTap' and select only 'totalflow' flowtype for wastewater
+# Filter 'OutsideTap' en selecteer alleen 'totalflow' flowtype voor afvalwater
 wastewater = consumption.where(consumption.enduse != 'OutsideTap', drop=True).sel(flowtypes='totalflow')
 
-# Summing over 'enduse' and 'user', and taking the mean over 'patterns'
+# Berekening van het totale verbruik en piekbelasting
 tot_ww = wastewater.sum(['enduse', 'user']).mean(['patterns'])
 
-# Plot only total wastewater flow
+total_water_consumption = wastewater.sum(['enduse', 'user']).sum(dim='time')
+peak_load = tot_ww.max().values * 1000
+
+print(f"Totaal Waterverbruik: {total_water_consumption} liter")
+print(f"Piekbelasting van de waterafvoer: {peak_load} liter/tijdseenheid")
+
+# Visualiseer alleen de totale afvalwaterstroom
 plt.figure(figsize=(10, 6))
-tot_ww.plot(label='Total WasteWater Flow')
-plt.title("Total WasteWater Flow over Time")
-plt.xlabel("Time")
-plt.ylabel("Water Flow")
+tot_ww.plot(label='Total WasteWater Flow')  
+plt.title("Afvalwater simulatie")
+plt.xlabel("Time (MM-DD-HH)")
+plt.ylabel("Afvalwater (m3)")
 plt.legend()
 plt.show()
