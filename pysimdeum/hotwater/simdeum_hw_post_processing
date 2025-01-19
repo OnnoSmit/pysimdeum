@@ -1,0 +1,101 @@
+import pysimdeum
+import matplotlib.pyplot as plt
+import xarray as xr
+import pandas as pd
+import numpy as np
+
+# Built a house (family household)
+house = pysimdeum.built_house(house_type='family')
+print(house)
+
+# Show the inhabitants of a house
+print("List of Users:")
+print(house.users)
+
+# Show water end-use devices present in the house
+print("List of Devices:")
+print(house.appliances)
+
+# Simulate water consumption for house (xarray.DataArray)
+consumption = house.simulate(num_patterns=100)
+
+def adjust_flow_and_duration(data):
+    min_size = min(len(data.enduse.values), len(data.time.values))
+
+    for index in range(min_size):
+        enduse = data.enduse.values[index]
+
+        try:
+            flow = float(data.sel(flowtypes='totalflow').isel(time=index).values.item())
+            time = data.time.values[index] / np.timedelta64(1, 'm')
+        except (ValueError, TypeError):
+            continue
+
+        if enduse in ['Shower', 'Ktap', 'Brtap']:
+            continue 
+        elif enduse == 'Bath':
+            new_flow = 1
+            new_time = round((flow * time * 60) / new_flow) / 60
+            data.sel(flowtypes='totalflow').isel(time=index).data = flow * time / new_time
+            data.time.values[index] = new_time * np.timedelta64(1, 'm')
+        elif enduse == 'Wc':
+            new_flow = 2
+            new_time = round((flow * time * 60) / new_flow) / 60
+            data.sel(flowtypes='totalflow').isel(time=index).data = flow * time / new_time
+            data.time.values[index] = new_time * np.timedelta64(1, 'm')
+
+    return data
+
+# Pas flow en duur aan
+adjusted_consumption = adjust_flow_and_duration(consumption)
+
+# Stap 3: Verwerking van gegevens voor visualisatie
+def process_consumption(data, specific_heat=4186, temperature_difference=50, efficiency=0.9):
+    hot_water_usage = []
+    energy_usage = []
+
+    for time in data.time:
+        total_flow = data.sel(flowtypes='totalflow', time=time).sum().values.item()
+        hot_water_usage.append(total_flow)
+
+        # Bereken energieverbruik (Joules)
+        energy = (specific_heat * total_flow * temperature_difference) / efficiency
+        energy_usage.append(energy)
+
+    return np.array(hot_water_usage), np.array(energy_usage), data.time
+
+hot_water_usage, energy_usage, time_values = process_consumption(adjusted_consumption)
+
+# Stap 4: Plotten van warmwatergebruik en energieverbruik
+def plot_usage_and_energy(hot_water_usage, energy_usage, time_values):
+    time_labels = pd.to_datetime(time_values).strftime('%m-%d-%H')
+    time_indices = np.arange(0, len(time_values), step=(len(time_values) // 8))  # 3-uurs stappen
+    selected_time_labels = time_labels[time_indices]
+
+    plt.figure(figsize=(12, 6))
+
+    # Warmwatergebruik
+    plt.subplot(2, 1, 1)
+    plt.plot(hot_water_usage, label="Hot Water Usage (L)", color="blue")
+    plt.xticks(time_indices, selected_time_labels, rotation=45)
+    plt.xlabel("Time (MM-DD-HH)")
+    plt.ylabel("Water Usage (L)")
+    plt.title("Hot Water Usage Throughout the Day")
+    plt.legend()
+    plt.grid(True)
+
+    # Energieverbruik
+    plt.subplot(2, 1, 2)
+    plt.plot(energy_usage, label="Energy Usage (J)", color="red")
+    plt.xticks(time_indices, selected_time_labels, rotation=45)
+    plt.xlabel("Time (MM-DD-HH)")
+    plt.ylabel("Energy (J)")
+    plt.title("Energy Usage Throughout the Day")
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# Plot resultaten
+plot_usage_and_energy(hot_water_usage, energy_usage, time_values)
